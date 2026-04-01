@@ -32,6 +32,8 @@ from app.db import (
 from app.state import AppState
 from app.events import compute_burst_anomaly, compute_density_anomaly, utcnow
 from app.watchlist import load_rules, match_device
+from app.scoring import score_device
+from app.context.arp_cache import read_arp_cache
 
 
 def _utcnow() -> datetime:
@@ -308,6 +310,65 @@ def create_app(*, db_path: str) -> FastAPI:
             seen_count=int(cur.get("seen_count") or 0) if cur else int(stats.get("n") or 0),
         )
         return {"device_id": device_id, "minutes": minutes, "rssi_stats": stats, "movement": mv.movement, "movement_score": mv.score}
+
+    @app.get("/device_detail")
+    async def device_detail(device_id: str = Query(...), minutes: int = Query(10, ge=1, le=120)) -> dict[str, Any]:
+        snap = orchestrator.snapshot()
+        d = next((x for x in snap["devices"] if x["device_id"] == device_id), None)
+        if not d:
+            return {"device_id": device_id, "found": False}
+
+        persistent_seconds = 0.0
+        try:
+            persistent_seconds = (
+                datetime.fromisoformat(d["last_seen"]) - datetime.fromisoformat(d["first_seen"])
+            ).total_seconds()
+        except Exception:
+            persistent_seconds = 0.0
+
+        scored = score_device(
+            signal_type=d.get("signal_type"),
+            device_id=d.get("device_id"),
+            name=d.get("name"),
+            ssid=d.get("ssid"),
+            security=d.get("security"),
+            vendor=d.get("vendor"),
+            last_rssi=d.get("last_rssi"),
+            seen_count=int(d.get("seen_count") or 0),
+            persistent_seconds=persistent_seconds,
+        )
+
+        rules = load_rules()
+        watch_hits = match_device(rules, d)
+
+        stats = await fetch_device_rssi_stats(orchestrator.db_path, device_id=device_id, minutes=minutes)
+        history = await fetch_device_history(orchestrator.db_path, device_id=device_id, limit=60)
+
+        return {
+            "found": True,
+            "device": d,
+            "score": {
+                "score": scored.score,
+                "category": scored.category,
+                "reasons": scored.reasons,
+            },
+            "camera": {
+                "confidence": scored.camera_confidence,
+                "reasons": scored.camera_reasons,
+                "tagged": scored.camera_confidence >= 60,
+            },
+            "watchlist": {
+                "hits": watch_hits,
+                "matched": len(watch_hits) > 0,
+            },
+            "rssi_stats": stats,
+            "history": history,
+        }
+
+    @app.get("/neighbors")
+    async def neighbors() -> dict[str, Any]:
+        # Passive/local-only: ARP cache (no scanning/probing).
+        return read_arp_cache()
 
     @app.get("/events")
     async def events(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:

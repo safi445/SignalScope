@@ -13,6 +13,8 @@ let selectedKey = null; // `${signal_type}:${device_id}`
 let selectedHistory = [];
 let lastSnapshot = [];
 let lastDevices = [];
+let searchTimer = null;
+let lanNeighbors = [];
 
 // Smooth radar state (per device).
 const blips = new Map(); // key -> {x,y,tx,ty,r,c,cat,ttl}
@@ -152,6 +154,31 @@ function drawRadarFrame(devices) {
     ctx.beginPath();
     ctx.arc(b.x, b.y, 13, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // LAN overlay (ARP cache) — optional.
+  const showLan = $("showLan")?.checked ?? true;
+  if (showLan && Array.isArray(lanNeighbors) && lanNeighbors.length) {
+    const maxLabels = 10;
+    const neighbors = lanNeighbors.slice(0, maxLabels);
+    ctx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textBaseline = "middle";
+    for (let i = 0; i < neighbors.length; i++) {
+      const n = neighbors[i];
+      const a = hashAngle(`lan:${n.ip}`);
+      const rad = R * 1.02;
+      const x = cx + Math.cos(a) * rad;
+      const y = cy + Math.sin(a) * rad;
+      ctx.fillStyle = "rgba(159,176,208,0.9)";
+      ctx.beginPath();
+      ctx.arc(x, y, 3.3, 0, Math.PI * 2);
+      ctx.fill();
+      const label = n.ip;
+      const off = Math.cos(a) >= 0 ? 9 : -9;
+      ctx.textAlign = Math.cos(a) >= 0 ? "left" : "right";
+      ctx.fillStyle = "rgba(207,224,255,0.82)";
+      ctx.fillText(label, x + off, y);
+    }
   }
 }
 
@@ -363,6 +390,15 @@ async function selectDevice(d) {
     drawTrail([]);
   }
 
+  // Detail drawer (explain why flagged).
+  try {
+    const r3 = await fetch(`/device_detail?device_id=${encodeURIComponent(d.device_id)}&minutes=10`, { cache: "no-store" });
+    const det = await r3.json();
+    renderDetail(det);
+  } catch {
+    renderDetail({ found: false });
+  }
+
   try {
     const r2 = await fetch(`/device_stats?device_id=${encodeURIComponent(d.device_id)}&minutes=10`, { cache: "no-store" });
     const s = await r2.json();
@@ -372,6 +408,50 @@ async function selectDevice(d) {
   } catch {
     $("selMotion").textContent = "—";
   }
+}
+
+function chip(cls, text) {
+  return `<span class="chip ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function renderDetail(det) {
+  const host = $("detail");
+  if (!host) return;
+  if (!det || !det.found) {
+    host.innerHTML = `<div class="detailTitle">No device selected</div><div class="detailSmall">Click a device to see details.</div>`;
+    return;
+  }
+  const d = det.device || {};
+  const score = det.score || {};
+  const cam = det.camera || {};
+  const wl = det.watchlist || {};
+
+  const cat = (score.category || d.category || "Normal");
+  const cls = cat === "Suspicious" ? "r" : cat === "Interesting" ? "y" : "g";
+
+  const title = d.ssid || d.name || "(unnamed)";
+  const reasons = (score.reasons || []).slice(0, 6);
+  const camReasons = (cam.reasons || []).slice(0, 6);
+  const wlHits = (wl.hits || []).slice(0, 6);
+
+  host.innerHTML = `
+    <div class="detailTitle">${escapeHtml(title)}</div>
+    <div class="id" style="margin-top:4px">${escapeHtml(d.signal_type)} · ${escapeHtml(d.device_id)} · ${escapeHtml(d.source || "—")}</div>
+    <div class="chips">
+      ${chip(cls, `${cat} · ${score.score ?? d.suspicion_score ?? "—"}`)}
+      ${cam.tagged ? chip("r", `Potential camera · ${cam.confidence}`) : chip("g", `Camera conf · ${cam.confidence ?? 0}`)}
+      ${wl.matched ? chip("y", `Watchlist · ${wlHits.length}`) : chip("g", "Watchlist · 0")}
+    </div>
+    <div class="detailGrid">
+      <div class="kv"><div class="k">Vendor</div><div class="v">${escapeHtml(d.vendor || "—")}</div></div>
+      <div class="kv"><div class="k">RSSI</div><div class="v">${escapeHtml(d.last_rssi ?? "—")} dBm</div></div>
+      <div class="kv"><div class="k">Band</div><div class="v">${escapeHtml(d.band || "—")}</div></div>
+      <div class="kv"><div class="k">Security</div><div class="v">${escapeHtml(d.security || "—")}</div></div>
+    </div>
+    <div class="detailSmall"><b>Score reasons:</b> ${escapeHtml(reasons.join(", ") || "—")}</div>
+    <div class="detailSmall"><b>Camera hints:</b> ${escapeHtml(camReasons.join(", ") || "—")}</div>
+    <div class="detailSmall"><b>Watchlist:</b> ${escapeHtml(wlHits.join(", ") || "—")}</div>
+  `;
 }
 
 function passesFilters(d) {
@@ -553,11 +633,46 @@ async function refreshEvents() {
 
 $("btnEvents")?.addEventListener("click", refreshEvents);
 
+function renderNeighbors(rows) {
+  const host = $("neighbors");
+  if (!host) return;
+  if (!rows || !rows.length) {
+    host.innerHTML = `<div class="nbRow"><span class="nbMuted">No ARP entries yet.</span><span class="nbMuted">local only</span></div>`;
+    return;
+  }
+  host.innerHTML = rows
+    .slice(0, 60)
+    .map(
+      (r) =>
+        `<div class="nbRow"><span>${escapeHtml(r.ip)}</span><span>${escapeHtml(r.mac)}</span><span class="nbMuted">${escapeHtml(
+          r.type
+        )}</span></div>`
+    )
+    .join("");
+}
+
+async function refreshNeighbors() {
+  try {
+    const r = await fetch("/neighbors", { cache: "no-store" });
+    const d = await r.json();
+    lanNeighbors = (d && d.rows) || [];
+    renderNeighbors(lanNeighbors);
+  } catch {
+    lanNeighbors = [];
+    renderNeighbors([]);
+  }
+}
+
+$("btnNeighbors")?.addEventListener("click", refreshNeighbors);
+
 // Re-filter on input changes without waiting for next poll.
 for (const id of ["q", "onlySusp", "onlyCam", "onlyWifi", "onlyBle"]) {
   const el = $(id);
   if (!el) continue;
-  el.addEventListener("input", () => renderList(lastSnapshot));
+  el.addEventListener("input", () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => renderList(lastSnapshot), 120);
+  });
   el.addEventListener("change", () => renderList(lastSnapshot));
 }
 
@@ -572,8 +687,12 @@ poll();
 requestAnimationFrame(anim);
 setInterval(refreshEvents, 5000);
 refreshEvents();
+setInterval(refreshNeighbors, 10000);
+refreshNeighbors();
 
 // Keep chart updated even when list re-renders.
 drawChart([]);
 drawTrail([]);
+
+renderDetail({ found: false });
 

@@ -19,62 +19,83 @@
         </div>
       </header>
 
-      <main class="grid">
-        <section class="card radarCard">
-          <div class="cardTitle">Radar</div>
-          <canvas id="radar" width="720" height="720"></canvas>
-          <div class="legend">
-            <span class="lg"><i class="sw g"></i>Normal</span>
-            <span class="lg"><i class="sw y"></i>Interesting</span>
-            <span class="lg"><i class="sw r"></i>Suspicious</span>
+      <main class="hud">
+        <section class="card left">
+          <div class="rowHead">
+            <div class="cardTitle" style="margin:0">Radar</div>
+            <div class="legend">
+              <span class="lg"><i class="sw g"></i>Normal</span>
+              <span class="lg"><i class="sw y"></i>Interesting</span>
+              <span class="lg"><i class="sw r"></i>Suspicious</span>
+            </div>
           </div>
+          <canvas id="radar" width="720" height="720"></canvas>
         </section>
 
-        <section class="card">
-          <div class="cardTitle">Devices</div>
-          <div class="metaRow">
-            <div>Last scan: <span id="lastScan">—</span></div>
-            <div>Total: <span id="deviceCount">0</span></div>
+        <section class="card mid">
+          <div class="rowHead">
+            <div class="cardTitle" style="margin:0">Devices</div>
+            <div class="metaRow" style="margin:0">
+              <div>Last scan: <span id="lastScan">—</span></div>
+              <div>Total: <span id="deviceCount">0</span></div>
+            </div>
           </div>
           <div class="filters">
             <input id="q" class="inp" placeholder="Search SSID/name/vendor/BSSID…" />
-            <label class="chk"><input id="onlySusp" type="checkbox" /> Suspicious only</label>
-            <label class="chk"><input id="onlyCam" type="checkbox" /> Potential cameras</label>
+            <label class="chk"><input id="onlySusp" type="checkbox" /> Suspicious</label>
+            <label class="chk"><input id="onlyCam" type="checkbox" /> Cameras</label>
             <label class="chk"><input id="onlyWifi" type="checkbox" /> Wi‑Fi</label>
             <label class="chk"><input id="onlyBle" type="checkbox" /> BLE</label>
           </div>
+          <div id="deviceList" class="list"></div>
+        </section>
+
+        <section class="card right">
+          <div class="rowHead">
+            <div class="cardTitle" style="margin:0">Intel</div>
+            <div class="btnRow">
+              <button id="btnDebrief" class="btn smallBtn">Debrief</button>
+              <button id="btnEvents" class="btn smallBtn">Events</button>
+              <label class="chk"><input id="showLan" type="checkbox" checked /> LAN overlay</label>
+              <a class="btn smallBtn" href="/export/devices.csv" target="_blank" rel="noreferrer">Devices CSV</a>
+              <a class="btn smallBtn" href="/export/events.csv" target="_blank" rel="noreferrer">Events CSV</a>
+            </div>
+          </div>
+
+          <div class="drawerHead">
+            <div>Selected: <span id="selectedLabel" class="mono">—</span></div>
+            <div class="muted">Details + explain</div>
+          </div>
+
+          <div id="detail" class="detail"></div>
+
           <div class="chartWrap">
             <div class="chartHead">
-              <div>Selected: <span id="selectedLabel" class="mono">—</span></div>
               <div class="muted">RSSI timeline + trail</div>
+              <div>Motion: <span id="selMotion">—</span></div>
             </div>
             <canvas id="rssiChart" width="720" height="180"></canvas>
             <canvas id="trail" width="720" height="220"></canvas>
-            <div class="chartMeta">
-              <div>First seen: <span id="selFirst">—</span></div>
-              <div>Last seen: <span id="selLast">—</span></div>
-              <div>Seen: <span id="selSeen">—</span></div>
-              <div>Δt: <span id="selPersist">—</span></div>
-              <div>Motion: <span id="selMotion">—</span></div>
-            </div>
           </div>
-          <div id="deviceList" class="list"></div>
+
+          <div class="eventsBox" style="width:auto">
+            <div class="eventsHead">
+              <div class="cardTitle" style="margin:0">Events</div>
+            </div>
+            <div id="events" class="events"></div>
+          </div>
+
+          <div class="eventsBox" style="width:auto">
+            <div class="eventsHead">
+              <div class="cardTitle" style="margin:0">LAN neighbors (ARP cache)</div>
+              <button id="btnNeighbors" class="btn smallBtn">Refresh</button>
+            </div>
+            <div id="neighbors" class="neighbors"></div>
+          </div>
+
+          <pre id="debrief" class="debrief"></pre>
         </section>
       </main>
-
-      <footer class="foot">
-        <button id="btnDebrief" class="btn">Debrief (5 min)</button>
-        <a class="btn" href="/export/devices.csv" target="_blank" rel="noreferrer">Export devices CSV</a>
-        <a class="btn" href="/export/events.csv" target="_blank" rel="noreferrer">Export events CSV</a>
-        <div class="eventsBox">
-          <div class="eventsHead">
-            <div class="cardTitle" style="margin:0">Events</div>
-            <button id="btnEvents" class="btn smallBtn">Refresh</button>
-          </div>
-          <div id="events" class="events"></div>
-        </div>
-        <pre id="debrief" class="debrief"></pre>
-      </footer>
     </div>
 
     <script src="/static/app.js"></script>
