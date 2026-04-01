@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+recon.db
+*.sqlite
+*.sqlite3
+
+data/oui.csv
+
+.DS_Store
+Thumbs.db
+

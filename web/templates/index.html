@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div>
+          <div class="title">SignalScope</div>
+          <div class="sub">Passive Wi‑Fi + BLE metadata awareness</div>
+        </div>
+        <div class="pill">
+          <span id="statusDot" class="dot"></span>
+          <span id="statusText">Starting…</span>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="card radarCard">
+          <div class="cardTitle">Radar</div>
+          <canvas id="radar" width="720" height="720"></canvas>
+          <div class="legend">
+            <span class="lg"><i class="sw g"></i>Normal</span>
+            <span class="lg"><i class="sw y"></i>Interesting</span>
+            <span class="lg"><i class="sw r"></i>Suspicious</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="cardTitle">Devices</div>
+          <div class="metaRow">
+            <div>Last scan: <span id="lastScan">—</span></div>
+            <div>Total: <span id="deviceCount">0</span></div>
+          </div>
+          <div class="filters">
+            <input id="q" class="inp" placeholder="Search SSID/name/vendor/BSSID…" />
+            <label class="chk"><input id="onlySusp" type="checkbox" /> Suspicious only</label>
+            <label class="chk"><input id="onlyCam" type="checkbox" /> Potential cameras</label>
+            <label class="chk"><input id="onlyWifi" type="checkbox" /> Wi‑Fi</label>
+            <label class="chk"><input id="onlyBle" type="checkbox" /> BLE</label>
+          </div>
+          <div class="chartWrap">
+            <div class="chartHead">
+              <div>Selected: <span id="selectedLabel" class="mono">—</span></div>
+              <div class="muted">RSSI timeline + trail</div>
+            </div>
+            <canvas id="rssiChart" width="720" height="180"></canvas>
+            <canvas id="trail" width="720" height="220"></canvas>
+            <div class="chartMeta">
+              <div>First seen: <span id="selFirst">—</span></div>
+              <div>Last seen: <span id="selLast">—</span></div>
+              <div>Seen: <span id="selSeen">—</span></div>
+              <div>Δt: <span id="selPersist">—</span></div>
+              <div>Motion: <span id="selMotion">—</span></div>
+            </div>
+          </div>
+          <div id="deviceList" class="list"></div>
+        </section>
+      </main>
+
+      <footer class="foot">
+        <button id="btnDebrief" class="btn">Debrief (5 min)</button>
+        <a class="btn" href="/export/devices.csv" target="_blank" rel="noreferrer">Export devices CSV</a>
+        <a class="btn" href="/export/events.csv" target="_blank" rel="noreferrer">Export events CSV</a>
+        <div class="eventsBox">
+          <div class="eventsHead">
+            <div class="cardTitle" style="margin:0">Events</div>
+            <button id="btnEvents" class="btn smallBtn">Refresh</button>
+          </div>
+          <div id="events" class="events"></div>
+        </div>
+        <pre id="debrief" class="debrief"></pre>
+      </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
