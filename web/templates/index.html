@@ -42,6 +42,15 @@
           </div>
           <div class="filters">
             <input id="q" class="inp" placeholder="Search SSID/name/vendor/BSSID…" />
+            <button id="btnNearest" class="btn smallBtn">Nearest</button>
+            <button id="btnNearestWifi" class="btn smallBtn">Nearest Wi‑Fi</button>
+            <button id="btnLock" class="btn smallBtn">Lock: Off</button>
+            <select id="sortBy" class="sel">
+              <option value="score">Sort: score</option>
+              <option value="rssi">Sort: nearest (RSSI)</option>
+              <option value="seen">Sort: last seen</option>
+              <option value="name">Sort: name/SSID</option>
+            </select>
             <label class="chk"><input id="onlySusp" type="checkbox" /> Suspicious</label>
             <label class="chk"><input id="onlyCam" type="checkbox" /> Cameras</label>
             <label class="chk"><input id="onlyWifi" type="checkbox" /> Wi‑Fi</label>

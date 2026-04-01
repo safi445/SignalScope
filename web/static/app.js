@@ -15,6 +15,7 @@ let lastSnapshot = [];
 let lastDevices = [];
 let searchTimer = null;
 let lanNeighbors = [];
+let locked = false;
 
 // Smooth radar state (per device).
 const blips = new Map(); // key -> {x,y,tx,ty,r,c,cat,ttl}
@@ -488,7 +489,17 @@ function renderList(devices) {
   const host = $("deviceList");
   host.innerHTML = "";
 
-  const filtered = devices.filter(passesFilters);
+  let filtered = devices.filter(passesFilters);
+  // Sorting (client-side).
+  const sortBy = $("sortBy")?.value || "score";
+  const safeStr = (v) => String(v || "").toLowerCase();
+  const safeNum = (v, dflt = -9999) => (typeof v === "number" ? v : v == null ? dflt : Number(v));
+  filtered = [...filtered].sort((a, b) => {
+    if (sortBy === "rssi") return safeNum(b.last_rssi, -9999) - safeNum(a.last_rssi, -9999);
+    if (sortBy === "seen") return Date.parse(b.last_seen || "") - Date.parse(a.last_seen || "");
+    if (sortBy === "name") return safeStr(a.ssid || a.name).localeCompare(safeStr(b.ssid || b.name));
+    return safeNum(b.suspicion_score, 0) - safeNum(a.suspicion_score, 0);
+  });
   $("deviceCount").textContent = String(filtered.length);
 
   for (const d of filtered.slice(0, 60)) {
@@ -566,6 +577,13 @@ async function poll() {
     if (!selectedKey && window.__lastDevices.length) {
       await selectDevice(window.__lastDevices[0]);
     }
+
+    // If locked, keep refreshing the selected target details live.
+    if (locked && selectedKey) {
+      const devId = selectedKey.split(":").slice(1).join(":");
+      const cur = window.__lastDevices.find((x) => x.device_id === devId);
+      if (cur) await selectDevice(cur);
+    }
   } catch (e) {
     setStatus(false, "Waiting for server…");
   }
@@ -633,6 +651,35 @@ async function refreshEvents() {
 
 $("btnEvents")?.addEventListener("click", refreshEvents);
 
+function selectNearest() {
+  if (!lastSnapshot || !lastSnapshot.length) return;
+  const best = [...lastSnapshot]
+    .filter(passesFilters)
+    .sort((a, b) => (b.last_rssi ?? -9999) - (a.last_rssi ?? -9999))[0];
+  if (best) selectDevice(best);
+}
+
+$("btnNearest")?.addEventListener("click", selectNearest);
+
+function toggleLock() {
+  locked = !locked;
+  const btn = $("btnLock");
+  if (btn) btn.textContent = locked ? "Lock: On" : "Lock: Off";
+}
+
+$("btnLock")?.addEventListener("click", toggleLock);
+
+function selectNearestWifi() {
+  if (!lastSnapshot || !lastSnapshot.length) return;
+  const best = [...lastSnapshot]
+    .filter((d) => d.signal_type === "wifi")
+    .filter(passesFilters)
+    .sort((a, b) => (b.last_rssi ?? -9999) - (a.last_rssi ?? -9999))[0];
+  if (best) selectDevice(best);
+}
+
+$("btnNearestWifi")?.addEventListener("click", selectNearestWifi);
+
 function renderNeighbors(rows) {
   const host = $("neighbors");
   if (!host) return;
@@ -666,7 +713,7 @@ async function refreshNeighbors() {
 $("btnNeighbors")?.addEventListener("click", refreshNeighbors);
 
 // Re-filter on input changes without waiting for next poll.
-for (const id of ["q", "onlySusp", "onlyCam", "onlyWifi", "onlyBle"]) {
+for (const id of ["q", "sortBy", "onlySusp", "onlyCam", "onlyWifi", "onlyBle"]) {
   const el = $(id);
   if (!el) continue;
   el.addEventListener("input", () => {

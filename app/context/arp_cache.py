@@ -8,7 +8,15 @@ from typing import Any
 
 def _run(cmd: list[str], timeout_s: int = 6) -> str:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, check=False)
+        p = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_s,
+            check=False,
+        )
         return (p.stdout or "").strip()
     except Exception:
         return ""

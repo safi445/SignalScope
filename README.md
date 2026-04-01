@@ -30,6 +30,12 @@ pip install -r requirements.txt
 python -m app
 ```
 
+### One-command run (Windows)
+
+```powershell
+.\run.ps1
+```
+
 3) Open dashboard:
 
 - `http://127.0.0.1:5000/`
@@ -38,14 +44,21 @@ python -m app
 
 Install:
 
-- `pkg update && pkg install python`
-- Termux:API app + `pkg install termux-api`
+- `pkg update && pkg install python termux-api`
+- Install the **Termux:API** companion app (from F-Droid / Play Store)
 
 Then (inside project directory):
 
 ```bash
 pip install -r requirements.txt
 python -m app
+```
+
+### One-command run (Termux / Linux / macOS)
+
+```bash
+chmod +x run.sh
+./run.sh
 ```
 
 The collectors will auto-detect Termux commands; if unavailable, it falls back to mock mode.
