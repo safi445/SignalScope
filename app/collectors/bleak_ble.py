@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Iterable, Optional
 
+from app.hwaddr import normalize_hw_address
 from app.models import Observation
 from app.oui import vendor_from_mac
 
@@ -35,6 +36,7 @@ class BleakBleCollector:
             addr = getattr(d, "address", None) or getattr(d, "id", None)
             if not addr:
                 continue
+            ble_id = normalize_hw_address(str(addr))
             name = getattr(d, "name", None)
             rssi = getattr(d, "rssi", None)
             try:
@@ -46,11 +48,11 @@ class BleakBleCollector:
                 Observation(
                     ts=now,
                     signal_type="ble",
-                    device_id=str(addr),
+                    device_id=ble_id,
                     source="bleak",
                     name=str(name) if name else None,
                     rssi=rssi_i,
-                    vendor=vendor_from_mac(str(addr)),
+                    vendor=vendor_from_mac(ble_id),
                     raw={"source": "bleak"},
                 )
             )

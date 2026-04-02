@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from app.collectors.bleak_ble import BleakBleCollector
 from app.collectors.mock import MockCollector
@@ -19,12 +20,107 @@ from app.db import (
     insert_observation,
 )
 from app.events import compute_burst_anomaly, compute_density_anomaly
+from app.hwaddr import normalize_hw_address
+from app.models import DeviceSummary, Observation
 from app.state import AppState
 from app.watchlist import load_rules, match_device
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _canonicalize_observation(obs: Observation) -> Observation:
+    if obs.signal_type not in ("wifi", "ble"):
+        return obs
+    nid = normalize_hw_address(obs.device_id)
+    if nid == obs.device_id:
+        return obs
+    return replace(obs, device_id=nid)
+
+
+def _dedupe_observations(observations: list[Observation]) -> list[Observation]:
+    """
+    One row per (type, device_id) per scan tick; keep the observation with the strongest RSSI.
+    Stops duplicate AP rows when the platform returns the same BSSID twice in one scan.
+    """
+    buckets: dict[tuple[str, str], Observation] = {}
+    order: list[tuple[str, str]] = []
+    for o in observations:
+        c = _canonicalize_observation(o)
+        k = (c.signal_type, c.device_id)
+        if k not in buckets:
+            order.append(k)
+        prev = buckets.get(k)
+        if prev is None:
+            buckets[k] = c
+        else:
+            if (c.rssi or -999) > (prev.rssi or -999):
+                buckets[k] = c
+    return [buckets[k] for k in order]
+
+
+def _category_for_score(score: int) -> Literal["Normal", "Interesting", "Suspicious"]:
+    if score >= 60:
+        return "Suspicious"
+    if score >= 30:
+        return "Interesting"
+    return "Normal"
+
+
+def _merge_duplicate_summaries(summaries: list[DeviceSummary]) -> list[DeviceSummary]:
+    """
+    Collapse multiple TrackedDevice rows that refer to the same Wi‑Fi BSSID / BLE MAC
+    (e.g. legacy keys before normalization, or mixed string formats in one session).
+    """
+    groups: dict[tuple[str, str], list[DeviceSummary]] = defaultdict(list)
+    for s in summaries:
+        if s.signal_type in ("wifi", "ble"):
+            nid = normalize_hw_address(s.device_id)
+            key = (s.signal_type, nid)
+        else:
+            key = (s.signal_type, s.device_id)
+        groups[key].append(s)
+
+    out: list[DeviceSummary] = []
+    for key, items in groups.items():
+        if len(items) == 1:
+            s = items[0]
+            if s.signal_type in ("wifi", "ble"):
+                s = replace(s, device_id=key[1])
+            out.append(s)
+            continue
+
+        signal_type, nid = key
+        items_sorted = sorted(items, key=lambda x: x.last_seen, reverse=True)
+        best = items_sorted[0]
+        first_seen = min(x.first_seen for x in items)
+        last_seen = max(x.last_seen for x in items)
+        seen_count = sum(x.seen_count for x in items)
+        suspicion_score = max(x.suspicion_score for x in items)
+        category = _category_for_score(suspicion_score)
+        tag_set: set[str] = set()
+        for x in items:
+            for t in x.tags or []:
+                tag_set.add(t)
+        tags: Optional[list[str]] = sorted(tag_set) if tag_set else None
+
+        out.append(
+            replace(
+                best,
+                device_id=nid,
+                first_seen=first_seen,
+                last_seen=last_seen,
+                seen_count=seen_count,
+                last_rssi=best.last_rssi,
+                suspicion_score=suspicion_score,
+                category=category,
+                tags=tags,
+            )
+        )
+
+    out.sort(key=lambda x: (x.suspicion_score, x.last_rssi or -999), reverse=True)
+    return out
 
 
 @dataclass
@@ -76,6 +172,8 @@ class ScannerOrchestrator:
 
             if self.force_mock or len(observations) == 0:
                 observations = list(self.mock.collect(now))
+
+            observations = _dedupe_observations(observations)
 
             for obs in observations:
                 self.state.ingest(obs)
@@ -204,8 +302,8 @@ class ScannerOrchestrator:
                 self._watchlist_last_emitted[key] = utcnow()
 
     def snapshot(self) -> dict[str, Any]:
-        devices = [d.to_summary() for d in self.state.devices.values()]
-        devices.sort(key=lambda x: (x.suspicion_score, x.last_rssi or -999), reverse=True)
+        raw = [d.to_summary() for d in self.state.devices.values()]
+        devices = _merge_duplicate_summaries(raw)
 
         def ser_dt(dt: datetime) -> str:
             return dt.astimezone(timezone.utc).isoformat()

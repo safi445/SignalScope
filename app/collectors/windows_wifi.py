@@ -9,12 +9,13 @@ from typing import Iterable, Optional
 from app.collectors.base import Collector
 from app.models import Observation
 from app.oui import vendor_from_mac
+from app.hwaddr import normalize_hw_address
 from app.wifi_enrich import band_from_channel, normalize_security
 
 
 _RE_SSID = re.compile(r"^\s*SSID\s+\d+\s*:\s*(.*)\s*$", re.IGNORECASE)
 _RE_AUTH = re.compile(r"^\s*Authentication\s*:\s*(.*)\s*$", re.IGNORECASE)
-_RE_BSSID = re.compile(r"^\s*BSSID\s+\d+\s*:\s*([0-9A-Fa-f:]{17})\s*$")
+_RE_BSSID = re.compile(r"^\s*BSSID\s+\d+\s*:\s*([0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5})\s*$")
 _RE_SIGNAL = re.compile(r"^\s*Signal\s*:\s*(\d+)\s*%\s*$", re.IGNORECASE)
 _RE_CHANNEL = re.compile(r"^\s*Channel\s*:\s*(\d+)\s*$", re.IGNORECASE)
 
@@ -67,13 +68,14 @@ class WindowsNetshWifiCollector(Collector):
             nonlocal bssid, signal_pct, channel
             if not bssid:
                 return
+            mac = normalize_hw_address(bssid)
             rssi = _pct_to_rssi(signal_pct) if signal_pct is not None else None
             band = band_from_channel(channel)
             obs.append(
                 Observation(
                     ts=now,
                     signal_type="wifi",
-                    device_id=bssid.upper(),
+                    device_id=mac,
                     source="windows",
                     name=None,
                     rssi=rssi,
@@ -82,7 +84,7 @@ class WindowsNetshWifiCollector(Collector):
                     ssid=ssid,
                     security=normalize_security(security),
                     band=band,
-                    vendor=vendor_from_mac(bssid),
+                    vendor=vendor_from_mac(mac),
                     raw={
                         "ssid": ssid,
                         "authentication": security,

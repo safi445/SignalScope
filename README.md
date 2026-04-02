@@ -75,6 +75,7 @@ The collectors will auto-detect Termux commands; if unavailable, it falls back t
 
 - Passive metadata only: SSID/BSSID/RSSI/channel (Wi‑Fi), address/name/RSSI (BLE)
 - RSSI distance is approximate and varies by hardware/environment
+- **Wi‑Fi list vs. “one network name”:** The scanner keys on **BSSID** (each access point radio). Mesh Wi‑Fi, dual‑band routers, and enterprise deployments often use the **same SSID** on **multiple BSSIDs**—those show as multiple rows on purpose. **Duplicate-looking rows for the same BSSID** are deduplicated (canonical MAC + per-scan merge).
 
 ## Optional: real vendor lookup (OUI database)
 

@@ -202,8 +202,7 @@ function msToHuman(ms) {
 }
 
 function drawChart(historyRows) {
-  const w = chart.width;
-  const h = chart.height;
+  const { cssW: w, cssH: h } = fitCanvasToCss(chart, cctx);
   cctx.clearRect(0, 0, w, h);
 
   // background
@@ -282,8 +281,7 @@ function drawChart(historyRows) {
 }
 
 function drawTrail(historyRows) {
-  const w = trail.width;
-  const h = trail.height;
+  const { cssW: w, cssH: h } = fitCanvasToCss(trail, tctx);
   tctx.clearRect(0, 0, w, h);
 
   // background
@@ -371,7 +369,12 @@ function drawTrail(historyRows) {
 }
 
 async function selectDevice(d) {
-  selectedKey = `${d.signal_type}:${d.device_id}`;
+  // Canonicalize device id before calling backend endpoints.
+  // This prevents "No device selected" when UI holds format variants.
+  const canonKey = canonicalScanKey(d); // `${signal_type}:${device_id_canon}`
+  const parts = String(canonKey).split(":");
+  const canonDeviceId = parts.slice(1).join(":");
+  selectedKey = canonKey;
   $("selectedLabel").textContent = selectedKey;
   $("selFirst").textContent = fmtTime(d.first_seen);
   $("selLast").textContent = fmtTime(d.last_seen);
@@ -380,7 +383,7 @@ async function selectDevice(d) {
   $("selMotion").textContent = "…";
 
   try {
-    const r = await fetch(`/history?device_id=${encodeURIComponent(d.device_id)}&limit=120`, { cache: "no-store" });
+    const r = await fetch(`/history?device_id=${encodeURIComponent(canonDeviceId)}&limit=120`, { cache: "no-store" });
     const data = await r.json();
     selectedHistory = data.rows || [];
     drawChart(selectedHistory);
@@ -393,7 +396,7 @@ async function selectDevice(d) {
 
   // Detail drawer (explain why flagged).
   try {
-    const r3 = await fetch(`/device_detail?device_id=${encodeURIComponent(d.device_id)}&minutes=10`, { cache: "no-store" });
+    const r3 = await fetch(`/device_detail?device_id=${encodeURIComponent(canonDeviceId)}&minutes=10`, { cache: "no-store" });
     const det = await r3.json();
     renderDetail(det);
   } catch {
@@ -401,7 +404,7 @@ async function selectDevice(d) {
   }
 
   try {
-    const r2 = await fetch(`/device_stats?device_id=${encodeURIComponent(d.device_id)}&minutes=10`, { cache: "no-store" });
+    const r2 = await fetch(`/device_stats?device_id=${encodeURIComponent(canonDeviceId)}&minutes=10`, { cache: "no-store" });
     const s = await r2.json();
     const mv = (s.movement || "unknown").toUpperCase();
     const sc = typeof s.movement_score === "number" ? s.movement_score.toFixed(1) : "—";
@@ -430,7 +433,7 @@ function renderDetail(det) {
   const cat = (score.category || d.category || "Normal");
   const cls = cat === "Suspicious" ? "r" : cat === "Interesting" ? "y" : "g";
 
-  const title = d.ssid || d.name || "(unnamed)";
+  const title = d.ssid || d.name || d.vendor || d.device_id || "(unnamed)";
   const reasons = (score.reasons || []).slice(0, 6);
   const camReasons = (cam.reasons || []).slice(0, 6);
   const wlHits = (wl.hits || []).slice(0, 6);
@@ -453,6 +456,44 @@ function renderDetail(det) {
     <div class="detailSmall"><b>Camera hints:</b> ${escapeHtml(camReasons.join(", ") || "—")}</div>
     <div class="detailSmall"><b>Watchlist:</b> ${escapeHtml(wlHits.join(", ") || "—")}</div>
   `;
+}
+
+/** Collapse duplicate rows that share the same Wi‑Fi BSSID / BLE MAC (format variants). */
+function canonicalScanKey(d) {
+  const t = d.signal_type || "";
+  let id = String(d.device_id ?? "").trim();
+  if (t === "wifi") {
+    const hex = id.replace(/[^0-9a-fA-F]/g, "");
+    if (hex.length === 12) {
+      id = hex.match(/.{2}/g).map((x) => x.toUpperCase()).join(":");
+    } else {
+      id = id.replace(/-/g, ":").toUpperCase();
+    }
+  } else if (t === "ble") {
+    const hex = id.replace(/[^0-9a-fA-F]/g, "");
+    if (hex.length === 12) {
+      id = hex.match(/.{2}/g).map((x) => x.toUpperCase()).join(":");
+    }
+  }
+  return `${t}:${id}`;
+}
+
+function dedupeScanDevices(devices) {
+  const best = new Map();
+  for (const d of devices || []) {
+    const k = canonicalScanKey(d);
+    const cur = best.get(k);
+    if (!cur) {
+      best.set(k, d);
+      continue;
+    }
+    const rank = (x) =>
+      (Number(x.suspicion_score || 0) << 20) +
+      Number(x.seen_count || 0) +
+      (Date.parse(x.last_seen || "") || 0) / 1e12;
+    best.set(k, rank(d) >= rank(cur) ? d : cur);
+  }
+  return [...best.values()];
 }
 
 function passesFilters(d) {
@@ -507,9 +548,9 @@ function renderList(devices) {
     row.className = "row";
 
     const catClass = d.category === "Suspicious" ? "r" : d.category === "Interesting" ? "y" : "g";
-    const title = d.ssid || d.name || "(unnamed)";
+    const title = d.ssid || d.name || d.vendor || d.device_id || "(unnamed)";
 
-    const key = `${d.signal_type}:${d.device_id}`;
+    const key = canonicalScanKey(d);
     if (selectedKey && key === selectedKey) row.classList.add("sel");
 
     const cam = (d.tags || []).includes("potential_camera");
@@ -549,12 +590,13 @@ async function tick() {
   try {
     const r = await fetch("/scan", { cache: "no-store" });
     const data = await r.json();
+    const devices = dedupeScanDevices(data.devices || []);
     const ts = data.ts ? new Date(data.ts) : null;
     $("lastScan").textContent = ts ? ts.toLocaleTimeString() : "—";
 
-    setStatus(true, `Live · ${data.device_count} devices`);
-    renderList(data.devices || []);
-    drawRadar(data.devices || []);
+    setStatus(true, `Live · ${devices.length} devices`);
+    renderList(devices);
+    drawRadar(devices);
   } catch (e) {
     setStatus(false, "Waiting for server…");
   }
@@ -565,12 +607,13 @@ async function poll() {
   try {
     const r = await fetch("/scan", { cache: "no-store" });
     const data = await r.json();
-    window.__lastDevices = data.devices || [];
+    const devices = dedupeScanDevices(data.devices || []);
+    window.__lastDevices = devices;
     lastSnapshot = window.__lastDevices;
     lastDevices = window.__lastDevices;
     const ts = data.ts ? new Date(data.ts) : null;
     $("lastScan").textContent = ts ? ts.toLocaleTimeString() : "—";
-    setStatus(true, `Live · ${data.device_count} devices`);
+    setStatus(true, `Live · ${devices.length} devices`);
     renderList(window.__lastDevices);
 
     // Auto-select the top device once (first load).
@@ -580,8 +623,8 @@ async function poll() {
 
     // If locked, keep refreshing the selected target details live.
     if (locked && selectedKey) {
-      const devId = selectedKey.split(":").slice(1).join(":");
-      const cur = window.__lastDevices.find((x) => x.device_id === devId);
+      // Find the device by its canonical scan key so UI format variants don't break "lock".
+      const cur = window.__lastDevices.find((x) => canonicalScanKey(x) === selectedKey);
       if (cur) await selectDevice(cur);
     }
   } catch (e) {

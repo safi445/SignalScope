@@ -9,6 +9,7 @@ from typing import Iterable, Optional
 from app.collectors.base import Collector
 from app.models import Observation
 from app.oui import vendor_from_mac
+from app.hwaddr import normalize_hw_address
 from app.wifi_enrich import band_from_frequency_mhz, normalize_security
 
 
@@ -41,6 +42,7 @@ class TermuxWifiCollector(Collector):
             bssid = item.get("bssid") or item.get("BSSID")
             if not bssid:
                 continue
+            mac = normalize_hw_address(str(bssid))
             ssid = item.get("ssid") or item.get("SSID")
             rssi = item.get("level") if "level" in item else item.get("rssi")
             try:
@@ -70,7 +72,7 @@ class TermuxWifiCollector(Collector):
                 Observation(
                     ts=now,
                     signal_type="wifi",
-                    device_id=str(bssid),
+                    device_id=mac,
                     source="termux",
                     name=None,
                     rssi=rssi_i,
@@ -79,7 +81,7 @@ class TermuxWifiCollector(Collector):
                     ssid=str(ssid) if ssid is not None else None,
                     security=security_s,
                     band=band,
-                    vendor=vendor_from_mac(str(bssid)),
+                    vendor=vendor_from_mac(mac),
                     raw=item,
                 )
             )
@@ -106,6 +108,7 @@ class TermuxBleCollector(Collector):
             addr = item.get("address") or item.get("mac") or item.get("id")
             if not addr:
                 continue
+            ble_id = normalize_hw_address(str(addr))
             name = item.get("name")
             rssi = item.get("rssi") or item.get("level")
             try:
@@ -117,11 +120,11 @@ class TermuxBleCollector(Collector):
                 Observation(
                     ts=now,
                     signal_type="ble",
-                    device_id=str(addr),
+                    device_id=ble_id,
                     source="termux",
                     name=str(name) if name is not None else None,
                     rssi=rssi_i,
-                    vendor=vendor_from_mac(str(addr)),
+                    vendor=vendor_from_mac(ble_id),
                     raw=item,
                 )
             )

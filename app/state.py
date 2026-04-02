@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from app.hwaddr import normalize_hw_address
 from app.models import Observation, DeviceSummary
 from app.movement import classify_movement
 from app.scoring import score_device
@@ -85,12 +86,13 @@ class AppState:
     last_scan_ts: Optional[datetime] = None
 
     def ingest(self, obs: Observation) -> None:
-        key = f"{obs.signal_type}:{obs.device_id}"
+        device_id = normalize_hw_address(obs.device_id) if obs.signal_type in ("wifi", "ble") else obs.device_id
+        key = f"{obs.signal_type}:{device_id}"
         d = self.devices.get(key)
         if d is None:
             d = TrackedDevice(
                 signal_type=obs.signal_type,
-                device_id=obs.device_id,
+                device_id=device_id,
                 source=obs.source,
                 name=obs.name,
                 ssid=obs.ssid,
